@@ -1,0 +1,31 @@
+# ==========================================
+# OrbitalMDT — Git Ignore Rules
+# ==========================================
+
+# Scilab Temporary & Generated Files
+*.bin
+*.sod
+*.scg
+*.scg*
+*.dia
+*.dia.ref
+*.log
+*.sci~
+*.sce~
+
+# OS Generated Files
+Thumbs.db
+desktop.ini
+ehthumbs.db
+.DS_Store
+.DS_Store?
+._*
+
+# Editor & IDE Directories / Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
