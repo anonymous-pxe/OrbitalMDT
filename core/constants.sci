@@ -1,16 +1,16 @@
-// ============================================================================
-// OrbitalMDT — Physical & Astronomical Constants
-// ============================================================================
-// All constants used across the toolkit. Single source of truth.
-// Units: km, kg, seconds unless otherwise noted.
-// ============================================================================
+// OrbitalMDT :: Physical & Astronomical Constants
+// Single source of truth for all constants. Units: km, kg, s, rad.
 
 function const = orbital_constants()
-    // ---- Universal Constants ----
-    const.G = 6.67430e-20;              // Gravitational constant [km^3 / (kg * s^2)]
-    
-    // ---- Solar System Gravitational Parameters (mu = G*M) [km^3/s^2] ----
-    const.mu_Sun     = 1.32712440018e11;
+
+    // --- Universal ---
+    const.G = 6.67430e-20;                // gravitational constant [km^3/(kg*s^2)]
+
+    // --- Sun ---
+    const.mu_Sun = 1.32712440018e11;      // [km^3/s^2]
+    const.R_Sun  = 695700;                // [km]
+
+    // --- Planetary gravitational parameters [km^3/s^2] ---
     const.mu_Mercury = 2.2032e4;
     const.mu_Venus   = 3.24859e5;
     const.mu_Earth   = 3.986004418e5;
@@ -18,9 +18,8 @@ function const = orbital_constants()
     const.mu_Jupiter = 1.26686534e8;
     const.mu_Saturn  = 3.7931187e7;
     const.mu_Moon    = 4.9048695e3;
-    
-    // ---- Planetary Radii [km] ----
-    const.R_Sun     = 695700;
+
+    // --- Planetary mean equatorial radii [km] ---
     const.R_Mercury = 2439.7;
     const.R_Venus   = 6051.8;
     const.R_Earth   = 6371.0;
@@ -28,48 +27,60 @@ function const = orbital_constants()
     const.R_Jupiter = 69911;
     const.R_Saturn  = 58232;
     const.R_Moon    = 1737.4;
-    
-    // ---- Mean Orbital Radii (semi-major axes) [km] ----
+
+    // --- Mean orbital semi-major axes [km] ---
     const.a_Mercury = 57.909e6;
     const.a_Venus   = 108.21e6;
     const.a_Earth   = 149.598e6;
     const.a_Mars    = 227.956e6;
     const.a_Jupiter = 778.570e6;
     const.a_Saturn  = 1433.53e6;
-    
-    // ---- Unit Conversions ----
-    const.AU        = 149597870.7;       // 1 AU in km
-    const.deg2rad   = %pi / 180;
-    const.rad2deg   = 180 / %pi;
-    const.day2sec   = 86400;             // seconds per day
-    const.year2sec  = 365.25 * 86400;    // seconds per Julian year
-    const.hr2sec    = 3600;
-    
-    // ---- Earth-Specific ----
-    const.J2_Earth  = 1.08263e-3;        // Earth J2 oblateness coefficient
-    const.Re_Earth  = 6378.137;          // Earth equatorial radius [km]
-    const.Rp_Earth  = 6356.752;          // Earth polar radius [km]
-    const.omega_Earth = 7.2921159e-5;    // Earth rotation rate [rad/s]
-    const.rho0_Earth = 1.225e9;          // Sea-level air density [kg/km^3]
-    const.H_Earth   = 8.5;              // Atmospheric scale height [km]
-    
-    // ---- Mars-Specific ----
-    const.J2_Mars   = 1.9555e-3;
-    const.omega_Mars = 7.0882e-5;        // Mars rotation rate [rad/s]
-    const.rho0_Mars = 0.020e9;           // Mars surface density [kg/km^3]
-    const.H_Mars    = 11.1;              // Mars scale height [km]
-    
-    // ---- J2000 Epoch ----
-    const.J2000_JD  = 2451545.0;         // Julian Date of J2000.0 epoch
-    
-    // ---- Planetary mu array (indexed by planet number 1-6) ----
-    const.mu_planets = [const.mu_Mercury, const.mu_Venus, const.mu_Earth, ...
+
+    // --- Unit conversions ---
+    const.AU       = 149597870.7;         // 1 AU [km]
+    const.deg2rad  = %pi / 180;
+    const.rad2deg  = 180 / %pi;
+    const.day2sec  = 86400;               // [s/day]
+    const.year2sec = 365.25 * 86400;      // [s/Julian year]
+    const.hr2sec   = 3600;                // [s/hr]
+
+    // --- Earth-specific ---
+    const.J2_Earth    = 1.08263e-3;       // J2 oblateness
+    const.Re_Earth    = 6378.137;         // equatorial radius [km]
+    const.Rp_Earth    = 6356.752;         // polar radius [km]
+    const.omega_Earth = 7.2921159e-5;     // rotation rate [rad/s]
+    const.rho0_Earth  = 1.225e9;          // sea-level air density [kg/km^3]
+    const.H_Earth     = 8.5;             // scale height [km]
+
+    // --- Mars-specific ---
+    const.J2_Mars    = 1.9555e-3;
+    const.omega_Mars = 7.0882e-5;         // rotation rate [rad/s]
+    const.rho0_Mars  = 0.020e9;          // surface density [kg/km^3]
+    const.H_Mars     = 11.1;             // scale height [km]
+
+    // --- J2000 epoch ---
+    const.J2000_JD = 2451545.0;           // Julian Date of J2000.0
+
+    // --- Indexed arrays (planet 1=Mercury .. 6=Saturn) ---
+    const.mu_planets = [const.mu_Mercury, const.mu_Venus, const.mu_Earth, ..
                         const.mu_Mars, const.mu_Jupiter, const.mu_Saturn];
-    const.R_planets  = [const.R_Mercury, const.R_Venus, const.R_Earth, ...
+    const.R_planets  = [const.R_Mercury, const.R_Venus, const.R_Earth, ..
                         const.R_Mars, const.R_Jupiter, const.R_Saturn];
     const.planet_names = ["Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn"];
-    
-    // ---- Standard Gravitational Parameters for Atmosphere Models ----
-    const.g0 = 9.80665e-3;              // Standard gravity [km/s^2]
-    
+
+    // --- Standard gravity ---
+    const.g0 = 9.80665e-3;               // [km/s^2]
+
+endfunction
+
+
+function d = dot(a, b)
+    d = sum(a .* b);
+endfunction
+
+
+function c = cross(a, b)
+    c = [a(2)*b(3) - a(3)*b(2); ..
+         a(3)*b(1) - a(1)*b(3); ..
+         a(1)*b(2) - a(2)*b(1)];
 endfunction
