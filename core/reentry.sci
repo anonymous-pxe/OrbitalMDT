@@ -85,21 +85,30 @@ function result = ballistic_entry(v_entry, gamma_entry, h_entry, beta, R_nose, p
         q_traj(k) = k_sg * sqrt(rho_kgm3 / R_nose) * v_ms^3 * 10;
     end
 
-    result.v_entry      = v_entry;
-    result.gamma_entry  = gamma_entry;
-    result.h_entry      = h_entry;
-    result.beta         = beta;
-    result.planet       = planet;
-    result.h_peak_decel = h_peak_decel;
-    result.v_peak_decel = v_peak_decel;
-    result.a_peak       = a_peak;
-    result.g_loading    = g_loading;
-    result.q_peak       = q_peak_kw;
-    result.Q_total      = Q_total;
-    result.h_traj       = h_traj;
-    result.v_traj       = v_traj;
-    result.a_traj       = a_traj;
-    result.q_traj       = q_traj;
+    // --- Dynamic Pressure (q = 0.5 * rho * v^2) [kPa] ---
+    rho_kgm3_all = rho0 * exp(-h_traj / H) * 1e-9;
+    v_ms_all = v_traj * 1000;
+    dyn_press_traj = 0.5 * rho_kgm3_all .* (v_ms_all.^2) / 1000; // kPa
+    peak_dyn_press = max(dyn_press_traj);
+
+    result.v_entry        = v_entry;
+    result.gamma_entry    = gamma_entry;
+    result.h_entry        = h_entry;
+    result.beta           = beta;
+    result.planet         = planet;
+    result.h_peak_decel   = h_peak_decel;
+    result.v_peak_decel   = v_peak_decel;
+    result.a_peak         = a_peak;
+    result.g_loading      = g_loading;
+    result.q_peak         = q_peak_kw;
+    result.Q_total        = Q_total;
+    result.peak_dyn_press = peak_dyn_press; // kPa
+    result.h_traj         = h_traj;
+    result.v_traj         = v_traj;
+    result.a_traj         = a_traj;
+    result.q_traj         = q_traj;
+    result.dyn_press_traj = dyn_press_traj;
+    result.disclaimer     = "Preliminary ballistic re-entry model - engineering estimate only.";
 endfunction
 
 

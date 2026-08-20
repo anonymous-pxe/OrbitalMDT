@@ -2,11 +2,14 @@
 
 function build_hohmann_tab(fig)
 
-    y_base = 25;
-    x_panel = 15;
-    pw = 280;
+    win_w = 1200; win_h = 800;
+    try win_w = fig.axes_size(1); win_h = fig.axes_size(2); catch end
 
-    uicontrol(fig, 'style', 'text', 'string', '[*] HOHMANN TRANSFER', ..
+    y_base = win_h - 780;
+    x_panel = 15;
+    pw = 290;
+
+    uicontrol(fig, 'style', 'text', 'string', '[*] ORBITAL TRANSFERS', ..
         'position', [x_panel, y_base+660, pw, 22], ..
         'fontsize', 11, 'fontweight', 'bold', 'horizontalalignment', 'left', ..
         'foreground', [0.2, 0.7, 0.3], 'tag', 'content_ht_title');
@@ -23,7 +26,7 @@ function build_hohmann_tab(fig)
         'position', [x_panel, y_base+600, 120, 20], 'fontsize', 10, ..
         'horizontalalignment', 'left', 'tag', 'content_ht_lbl00');
     uicontrol(fig, 'style', 'popupmenu', ..
-        'string', 'Earth Orbit (km)|Heliocentric (AU)|Custom mu', ..
+        'string', 'Earth Orbit (km)|Heliocentric (AU)|Custom mu (km)', ..
         'position', [x_panel+120, y_base+598, 155, 25], 'fontsize', 10, ..
         'value', 1, 'tag', 'content_ht_system');
 
@@ -75,19 +78,27 @@ function build_hohmann_tab(fig)
           'Transfer SMA:        --'; ..
           'Transfer Ecc:        --'; ..
           'Phase Angle:         --'; ..
-          'C3 Departure:        --'; ..
-          'Hohmann Compare:     --'];
+          'Transfer Energy:     --'; ..
+          'Comparison:          --'];
 
     for k = 1:10
         uicontrol(fig, 'style', 'text', 'string', rl(k,:), ..
             'position', [x_panel, y_base+395-k*23, pw, 20], ..
-            'fontsize', 10, 'horizontalalignment', 'left', ..
+            'fontsize', 9, 'horizontalalignment', 'left', ..
             'fontname', 'Consolas', 'tag', 'content_ht_result_' + string(k));
     end
 
+    // Model Assumptions Banner
+    uicontrol(fig, 'style', 'text', ..
+        'string', 'Assumptions: Coplanar, Circular Co-axial, 2-Body Impulsive', ..
+        'position', [x_panel, y_base+140, pw, 18], 'fontsize', 8, ..
+        'horizontalalignment', 'left', 'foreground', [0.5, 0.5, 0.5], ..
+        'tag', 'content_ht_assumptions');
+
+    plot_w = max(400, win_w - 330);
     uicontrol(fig, 'style', 'text', ..
         'string', 'Transfer orbit diagram will appear here', ..
-        'position', [310, y_base+300, 870, 40], 'fontsize', 14, ..
+        'position', [310, floor(win_h / 2) - 20, plot_w, 40], 'fontsize', 14, ..
         'horizontalalignment', 'center', 'foreground', [0.5, 0.5, 0.6], ..
         'tag', 'content_ht_plot_placeholder');
 endfunction
@@ -130,23 +141,31 @@ endfunction
 
 
 function cb_calculate_transfer()
-
     const = orbital_constants();
 
-    r1 = strtod(get(findobj('tag', 'content_ht_r1'), 'string'));
-    r2 = strtod(get(findobj('tag', 'content_ht_r2'), 'string'));
+    [r1, ok1, m1] = gui_get_positive_num('content_ht_r1', 'Initial Orbit Radius');
+    if ~ok1 then gui_report_error(m1); return; end
+
+    [r2, ok2, m2] = gui_get_positive_num('content_ht_r2', 'Final Orbit Radius');
+    if ~ok2 then gui_report_error(m2); return; end
+
     sys = get(findobj('tag', 'content_ht_system'), 'value');
 
     select sys
-    case 1, mu = const.mu_Earth; unit_str = ' km';
-    case 2, mu = const.mu_Sun; r1 = r1*const.AU; r2 = r2*const.AU; unit_str = ' AU';
-    case 3, mu = const.mu_Earth; unit_str = ' km';
+    case 1, mu = const.mu_Earth;
+    case 2, mu = const.mu_Sun; r1 = r1 * const.AU; r2 = r2 * const.AU;
+    case 3, mu = const.mu_Earth;
     end
 
     transfer_type = get(findobj('tag', 'content_ht_type'), 'value');
 
     if transfer_type == 1 then
-        result = hohmann_transfer(r1, r2, mu);
+        try
+            result = hohmann_transfer(r1, r2, mu);
+        catch
+            gui_report_error("Failed to compute Hohmann transfer: " + lasterror());
+            return;
+        end
 
         set(findobj('tag', 'content_ht_result_1'), 'string', ..
             msprintf('Delta-V1 (1st burn): %.4f km/s', result.dv1));
@@ -159,9 +178,9 @@ function cb_calculate_transfer()
 
         t_hrs = result.t_transfer / 3600;
         if t_hrs > 24 then
-            t_str = msprintf('%.1f days', t_hrs/24);
+            t_str = msprintf('%.2f days', t_hrs/24);
         else
-            t_str = msprintf('%.1f hours', t_hrs);
+            t_str = msprintf('%.2f hours', t_hrs);
         end
         set(findobj('tag', 'content_ht_result_5'), 'string', 'Transfer Time:   ' + t_str);
 
@@ -177,18 +196,34 @@ function cb_calculate_transfer()
         set(findobj('tag', 'content_ht_result_8'), 'string', ..
             msprintf('Phase Angle:     %.2f deg', result.phase_angle_deg));
         set(findobj('tag', 'content_ht_result_9'), 'string', ..
-            msprintf('C3 Departure:    %.3f km^2/s^2', result.C3_departure));
-        set(findobj('tag', 'content_ht_result_10'), 'string', '');
+            msprintf('Transfer Energy: %.2f km^2/s^2', result.energy_transfer));
+        set(findobj('tag', 'content_ht_result_10'), 'string', 'Type: Optimal 2-Impulse');
 
         ph = findobj('tag', 'content_ht_plot_placeholder');
-        if ph <> [] then set(ph, 'visible', 'off'); end
+        if ph <> [] then
+            for p_idx = 1:size(ph, "*")
+                try delete(ph(p_idx)); catch try set(ph(p_idx), 'visible', 'off'); catch end end
+            end
+        end
         plot_hohmann_orbit(r1, r2, result);
 
     else
-        r_int = strtod(get(findobj('tag', 'content_ht_r_int'), 'string'));
+        [r_int, oki, mi] = gui_get_positive_num('content_ht_r_int', 'Intermediate Radius');
+        if ~oki then gui_report_error(mi); return; end
+
         if sys == 2 then r_int = r_int * const.AU; end
 
-        result = bielliptic_transfer(r1, r2, r_int, mu);
+        if r_int < max(r1, r2) then
+            gui_report_error(msprintf("Intermediate radius (%g) must be >= max(r1, r2) = %g.", r_int, max(r1, r2)));
+            return;
+        end
+
+        try
+            result = bielliptic_transfer(r1, r2, r_int, mu);
+        catch
+            gui_report_error("Failed to compute Bi-Elliptic transfer: " + lasterror());
+            return;
+        end
 
         set(findobj('tag', 'content_ht_result_1'), 'string', ..
             msprintf('Delta-V1 (1st burn): %.4f km/s', result.dv1));
@@ -201,13 +236,13 @@ function cb_calculate_transfer()
 
         t_hrs = result.t_total / 3600;
         if t_hrs > 24 then
-            t_str = msprintf('%.1f days', t_hrs/24);
+            t_str = msprintf('%.2f days', t_hrs/24);
         else
-            t_str = msprintf('%.1f hours', t_hrs);
+            t_str = msprintf('%.2f hours', t_hrs);
         end
         set(findobj('tag', 'content_ht_result_5'), 'string', 'Transfer Time:   ' + t_str);
         set(findobj('tag', 'content_ht_result_6'), 'string', ..
-            msprintf('SMA1: %.1f  SMA2: %.1f', result.a1, result.a2));
+            msprintf('SMA1: %.0f, SMA2: %.0f', result.a1, result.a2));
         set(findobj('tag', 'content_ht_result_7'), 'string', ..
             msprintf('Ratio r2/r1:     %.2f', result.ratio));
         set(findobj('tag', 'content_ht_result_8'), 'string', ..
@@ -222,17 +257,22 @@ function cb_calculate_transfer()
             set(findobj('tag', 'content_ht_result_10'), 'string', ..
                 '[NO] Hohmann is more efficient');
         end
+
+        ph = findobj('tag', 'content_ht_plot_placeholder');
+        if ph <> [] then
+            for p_idx = 1:size(ph, "*")
+                try delete(ph(p_idx)); catch try set(ph(p_idx), 'visible', 'off'); catch end end
+            end
+        end
+        plot_bielliptic_orbit(r1, r2, r_int, result);
     end
 
-    update_status('Transfer calculation complete.');
+    update_status('Transfer calculation completed successfully.');
 endfunction
 
 
 function plot_hohmann_orbit(r1, r2, result)
-
-    newaxes();
-    a = gca();
-    a.axes_bounds = [0.28, 0.05, 0.70, 0.90];
+    a = gui_create_plot_axes([0.32, 0.10, 0.64, 0.82]);
     a.isoview = 'on';
 
     theta = linspace(0, 2*%pi, 200);
@@ -256,7 +296,46 @@ function plot_hohmann_orbit(r1, r2, result)
     plot(-r_large, 0, 'rv', 'MarkerSize', 10, 'MarkerFaceColor', 'r');
 
     legend(['Initial Orbit', 'Final Orbit', 'Transfer Orbit'], 'in_upper_left');
-    title('Hohmann Transfer Orbit Diagram');
+    title('Hohmann Transfer Orbit Diagram (2-Burn)');
+    xlabel('x [km]');
+    ylabel('y [km]');
+endfunction
+
+
+function plot_bielliptic_orbit(r1, r2, r_int, result)
+    a = gui_create_plot_axes([0.32, 0.10, 0.64, 0.82]);
+    a.isoview = 'on';
+
+    theta = linspace(0, 2*%pi, 200);
+
+    // Initial and final circular orbits
+    plot(r1 * cos(theta), r1 * sin(theta), 'b-', 'LineWidth', 1.5);
+    plot(r2 * cos(theta), r2 * sin(theta), 'r-', 'LineWidth', 1.5);
+
+    // Transfer ellipse 1: periapsis at r1, apoapsis at r_int
+    a1 = result.a1;
+    e1 = (r_int - r1) / (r_int + r1);
+    theta_t1 = linspace(0, %pi, 200);
+    r_t1 = a1 * (1 - e1^2) ./ (1 + e1 * cos(theta_t1));
+    plot(r_t1 .* cos(theta_t1), r_t1 .* sin(theta_t1), 'g--', 'LineWidth', 2.0);
+
+    // Transfer ellipse 2: apoapsis at r_int, periapsis at r2
+    a2 = result.a2;
+    e2 = (r_int - r2) / (r_int + r2);
+    theta_t2 = linspace(%pi, 2*%pi, 200);
+    r_t2 = a2 * (1 - e2^2) ./ (1 + e2 * cos(theta_t2));
+    plot(r_t2 .* cos(theta_t2), r_t2 .* sin(theta_t2), 'm--', 'LineWidth', 2.0);
+
+    // Central body
+    plot(0, 0, 'yo', 'MarkerSize', 12, 'MarkerFaceColor', [1, 0.8, 0]);
+
+    // Burn markers
+    plot(r1, 0, 'b^', 'MarkerSize', 9, 'MarkerFaceColor', 'b');        // Burn 1
+    plot(-r_int, 0, 'kd', 'MarkerSize', 10, 'MarkerFaceColor', [0.8, 0.5, 0]); // Burn 2 (Apoapsis)
+    plot(r2, 0, 'rv', 'MarkerSize', 9, 'MarkerFaceColor', 'r');        // Burn 3
+
+    legend(['Initial Orbit', 'Final Orbit', 'Transfer Ellipse 1', 'Transfer Ellipse 2'], 'in_upper_left');
+    title(msprintf('Bi-Elliptic Transfer: r1=%.0f, r2=%.0f, r_int=%.0f km', r1, r2, r_int));
     xlabel('x [km]');
     ylabel('y [km]');
 endfunction

@@ -20,9 +20,14 @@ function const = orbital_constants()
     const.mu_Moon    = 4.9048695e3;
 
     // --- Planetary mean equatorial radii [km] ---
+    // --- Planetary mean volumetric / equatorial radii [km] ---
+    // Note on Earth radii:
+    // - R_Earth: Mean volumetric radius (6371.0 km), used for bulk planetary visualization & mean spherical approximations.
+    // - Re_Earth: WGS84 Semi-major axis / Equatorial radius (6378.137 km), used for J2 oblate harmonics & geodetic altitude.
+    // - Rp_Earth: WGS84 Semi-minor axis / Polar radius (6356.752 km).
     const.R_Mercury = 2439.7;
     const.R_Venus   = 6051.8;
-    const.R_Earth   = 6371.0;
+    const.R_Earth   = 6371.0;             // mean volumetric radius [km]
     const.R_Mars    = 3389.5;
     const.R_Jupiter = 69911;
     const.R_Saturn  = 58232;
@@ -37,29 +42,30 @@ function const = orbital_constants()
     const.a_Saturn  = 1433.53e6;
 
     // --- Unit conversions ---
-    const.AU       = 149597870.7;         // 1 AU [km]
+    const.AU       = 149597870.7;         // 1 AU [km] (IAU 2012 exact)
     const.deg2rad  = %pi / 180;
     const.rad2deg  = 180 / %pi;
     const.day2sec  = 86400;               // [s/day]
     const.year2sec = 365.25 * 86400;      // [s/Julian year]
     const.hr2sec   = 3600;                // [s/hr]
 
-    // --- Earth-specific ---
-    const.J2_Earth    = 1.08263e-3;       // J2 oblateness
-    const.Re_Earth    = 6378.137;         // equatorial radius [km]
-    const.Rp_Earth    = 6356.752;         // polar radius [km]
+    // --- Earth-specific parameters ---
+    const.J2_Earth    = 1.08263e-3;       // J2 dynamic oblateness harmonic
+    const.Re_Earth    = 6378.137;         // WGS84 equatorial radius [km]
+    const.Rp_Earth    = 6356.752;         // WGS84 polar radius [km]
     const.omega_Earth = 7.2921159e-5;     // rotation rate [rad/s]
-    const.rho0_Earth  = 1.225e9;          // sea-level air density [kg/km^3]
-    const.H_Earth     = 8.5;             // scale height [km]
+    const.rho0_Earth  = 1.225e9;          // sea-level air density [kg/km^3] (= 1.225 kg/m^3)
+    const.H_Earth     = 8.5;              // atmospheric scale height [km]
 
-    // --- Mars-specific ---
+    // --- Mars-specific parameters ---
     const.J2_Mars    = 1.9555e-3;
     const.omega_Mars = 7.0882e-5;         // rotation rate [rad/s]
-    const.rho0_Mars  = 0.020e9;          // surface density [kg/km^3]
+    const.rho0_Mars  = 0.020e9;          // surface density [kg/km^3] (= 0.020 kg/m^3)
     const.H_Mars     = 11.1;             // scale height [km]
 
-    // --- J2000 epoch ---
-    const.J2000_JD = 2451545.0;           // Julian Date of J2000.0
+    // --- J2000 epoch & Obliquity ---
+    const.J2000_JD  = 2451545.0;           // Julian Date of J2000.0 (2000-01-01 12:00:00 TT)
+    const.eps_J2000 = 23.4392911;          // Mean obliquity of ecliptic at J2000 [deg]
 
     // --- Indexed arrays (planet 1=Mercury .. 6=Saturn) ---
     const.mu_planets = [const.mu_Mercury, const.mu_Venus, const.mu_Earth, ..
@@ -69,7 +75,7 @@ function const = orbital_constants()
     const.planet_names = ["Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn"];
 
     // --- Standard gravity ---
-    const.g0 = 9.80665e-3;               // [km/s^2]
+    const.g0 = 9.80665e-3;               // Standard acceleration of gravity [km/s^2] (= 9.80665 m/s^2)
 
 endfunction
 
@@ -83,4 +89,9 @@ function c = cross(a, b)
     c = [a(2)*b(3) - a(3)*b(2); ..
          a(3)*b(1) - a(1)*b(3); ..
          a(1)*b(2) - a(2)*b(1)];
+endfunction
+
+
+function n = norm_vec(v)
+    n = sqrt(sum(v .^ 2));
 endfunction

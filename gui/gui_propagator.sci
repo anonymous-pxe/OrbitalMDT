@@ -2,9 +2,12 @@
 
 function build_propagator_tab(fig)
 
-    y_base = 25;
+    win_w = 1200; win_h = 800;
+    try win_w = fig.axes_size(1); win_h = fig.axes_size(2); catch end
+
+    y_base = win_h - 780;
     x_panel = 15;
-    pw = 280;
+    pw = 290;
 
     uicontrol(fig, 'style', 'text', 'string', '[*] ORBIT PROPAGATOR', ..
         'position', [x_panel, y_base+660, pw, 22], ..
@@ -100,9 +103,17 @@ function build_propagator_tab(fig)
             'fontname', 'Consolas', 'tag', 'content_op_result_' + string(k));
     end
 
+    // Model Assumptions Banner
+    uicontrol(fig, 'style', 'text', ..
+        'string', 'Assumptions: Numerical Adams Integrator, 2-Body + J2 Dynamic Oblateness', ..
+        'position', [x_panel, y_base+38, pw, 18], 'fontsize', 8, ..
+        'horizontalalignment', 'left', 'foreground', [0.5, 0.5, 0.5], ..
+        'tag', 'content_op_assumptions');
+
+    plot_w = max(400, win_w - 330);
     uicontrol(fig, 'style', 'text', ..
         'string', 'Orbit visualization will appear here', ..
-        'position', [310, y_base+300, 870, 40], 'fontsize', 14, ..
+        'position', [310, floor(win_h / 2) - 20, plot_w, 40], 'fontsize', 14, ..
         'horizontalalignment', 'center', 'foreground', [0.5, 0.5, 0.6], ..
         'tag', 'content_op_plot_placeholder');
 endfunction
@@ -128,12 +139,23 @@ function cb_propagate_orbit()
 
     const = orbital_constants();
 
-    a         = strtod(get(findobj('tag', 'content_op_oe1'), 'string'));
-    e_val     = strtod(get(findobj('tag', 'content_op_oe2'), 'string'));
-    i_deg     = strtod(get(findobj('tag', 'content_op_oe3'), 'string'));
-    RAAN_deg  = strtod(get(findobj('tag', 'content_op_oe4'), 'string'));
-    omega_deg = strtod(get(findobj('tag', 'content_op_oe5'), 'string'));
-    nu_deg    = strtod(get(findobj('tag', 'content_op_oe6'), 'string'));
+    [a, oka, ma] = gui_get_positive_num('content_op_oe1', 'Semi-Major Axis a');
+    if ~oka then gui_report_error(ma); return; end
+
+    [e_val, oke, me] = gui_get_num('content_op_oe2', 'Eccentricity e', 0, 0.999);
+    if ~oke then gui_report_error(me); return; end
+
+    [i_deg, oki, mi] = gui_get_num('content_op_oe3', 'Inclination i', 0, 180);
+    if ~oki then gui_report_error(mi); return; end
+
+    [RAAN_deg, okr, mr] = gui_get_num('content_op_oe4', 'RAAN', -360, 360);
+    if ~okr then gui_report_error(mr); return; end
+
+    [omega_deg, okw, mw] = gui_get_num('content_op_oe5', 'Argument of Periapsis', -360, 360);
+    if ~okw then gui_report_error(mw); return; end
+
+    [nu_deg, okn, mn] = gui_get_num('content_op_oe6', 'True Anomaly', -360, 360);
+    if ~okn then gui_report_error(mn); return; end
 
     body_id = get(findobj('tag', 'content_op_body'), 'value');
     select body_id
@@ -143,11 +165,16 @@ function cb_propagate_orbit()
     case 4, mu = const.mu_Sun;   R_body = const.R_Sun;    J2_val = 0;
     end
 
-    d2r = %pi / 180;
-    [r0, v0] = orbital_elements_to_state(a, e_val, i_deg*d2r, RAAN_deg*d2r, ..
-                                          omega_deg*d2r, nu_deg*d2r, mu);
+    // Check periapsis altitude
+    r_peri = a * (1 - e_val);
+    if r_peri < R_body then
+        gui_report_error(msprintf("Periapsis radius (%.1f km) is below body surface (R=%.1f km). Trajectory impacts surface.", r_peri, R_body));
+        return;
+    end
 
-    dur_val  = strtod(get(findobj('tag', 'content_op_duration'), 'string'));
+    [dur_val, okd, md] = gui_get_positive_num('content_op_duration', 'Duration');
+    if ~okd then gui_report_error(md); return; end
+
     dur_unit = get(findobj('tag', 'content_op_dur_unit'), 'value');
     T_orbit  = 2 * %pi * sqrt(a^3 / mu);
 
@@ -157,29 +184,42 @@ function cb_propagate_orbit()
     case 3, t_end = dur_val * 86400;
     end
 
+    d2r = %pi / 180;
+    try
+        [r0, v0] = orbital_elements_to_state(a, e_val, i_deg*d2r, RAAN_deg*d2r, ..
+                                              omega_deg*d2r, nu_deg*d2r, mu);
+    catch
+        gui_report_error("Failed to convert orbital elements to state vectors: " + lasterror());
+        return;
+    end
+
     use_j2 = get(findobj('tag', 'content_op_j2'), 'value');
     opts.use_j2  = (use_j2 == 1);
     opts.J2      = J2_val;
     opts.Re      = R_body;
     opts.n_steps = 1000;
 
-    update_status('Propagating orbit...');
-    [t_out, states] = propagate_orbit(r0, v0, [0, t_end], mu, opts);
+    update_status('Propagating orbit numerically...');
+    try
+        [t_out, states] = propagate_orbit(r0, v0, [0, t_end], mu, opts);
+    catch
+        gui_report_error("Numerical ODE propagation failed: " + lasterror());
+        return;
+    end
 
     T_min  = T_orbit / 60;
     r_apo  = a * (1 + e_val);
-    r_peri = a * (1 - e_val);
     v_peri = sqrt(mu * (2/r_peri - 1/a));
     v_apo  = sqrt(mu * (2/r_apo - 1/a));
     energy = -mu / (2*a);
     h_mag  = sqrt(mu * a * (1 - e_val^2));
 
     set(findobj('tag', 'content_op_result_1'), 'string', ..
-        msprintf('Period:     %.2f min (%.4f hr)', T_min, T_min/60));
+        msprintf('Period:     %.2f min (%.2f hr)', T_min, T_min/60));
     set(findobj('tag', 'content_op_result_2'), 'string', ..
-        msprintf('Apoapsis:   %.2f km (alt %.1f)', r_apo, r_apo-R_body));
+        msprintf('Apoapsis:   %.1f km (alt %.1f)', r_apo, r_apo-R_body));
     set(findobj('tag', 'content_op_result_3'), 'string', ..
-        msprintf('Periapsis:  %.2f km (alt %.1f)', r_peri, r_peri-R_body));
+        msprintf('Periapsis:  %.1f km (alt %.1f)', r_peri, r_peri-R_body));
     set(findobj('tag', 'content_op_result_4'), 'string', ..
         msprintf('V at peri:  %.4f km/s', v_peri));
     set(findobj('tag', 'content_op_result_5'), 'string', ..
@@ -190,13 +230,16 @@ function cb_propagate_orbit()
         msprintf('Ang. Mom:   %.2f km^2/s', h_mag));
 
     ph = findobj('tag', 'content_op_plot_placeholder');
-    if ph <> [] then set(ph, 'visible', 'off'); end
+    if ph <> [] then
+        for p_idx = 1:size(ph, "*")
+            try delete(ph(p_idx)); catch try set(ph(p_idx), 'visible', 'off'); catch end end
+        end
+    end
 
     plot_type = get(findobj('tag', 'content_op_plottype'), 'value');
 
-    newaxes();
-    ax = gca();
-    ax.axes_bounds = [0.28, 0.05, 0.70, 0.90];
+    ax = gui_create_plot_axes([0.32, 0.10, 0.64, 0.82]);
+    fig = get_main_figure();
 
     select plot_type
     case 1
@@ -205,13 +248,13 @@ function cb_propagate_orbit()
         param3d([0], [0], [0]);
         e_p = gce(); e_p.mark_mode = 'on'; e_p.mark_style = 9; e_p.mark_size = 3;
         e_p.mark_foreground = color(0, 100, 255);
-        title('3D Orbit Visualization');
+        title('3D Orbit Visualization (ECI)');
         xlabel('X [km]'); ylabel('Y [km]'); zlabel('Z [km]');
 
     case 2
         [lat, lon] = compute_ground_track(states, t_out, const.omega_Earth);
         seg_start = 1;
-        for k = 2:length(lon)
+        for k = 2:size(lon, "*")
             if abs(lon(k) - lon(k-1)) > 180 then
                 plot(lon(seg_start:k-1), lat(seg_start:k-1), 'b-', 'LineWidth', 2);
                 seg_start = k;
@@ -222,7 +265,7 @@ function cb_propagate_orbit()
         for lg = -120:60:120, plot([lg,lg], [-90,90], 'k:'); end
         for lt = -60:30:60, plot([-180,180], [lt,lt], 'k:'); end
         gca().data_bounds = [-180, -90; 180, 90];
-        title('Ground Track'); xlabel('Longitude [deg]'); ylabel('Latitude [deg]');
+        title('Ground Track (Spherical Earth)'); xlabel('Longitude [deg]'); ylabel('Latitude [deg]');
 
     case 3
         r_mag = sqrt(states(1,:).^2 + states(2,:).^2 + states(3,:).^2);
@@ -239,20 +282,19 @@ function cb_propagate_orbit()
     case 5
         [r_m, v_m, a_h, e_h, i_h, h_h] = orbit_analysis(states, mu);
 
-        // use three vertically stacked axes
-        ax.axes_bounds = [0.28, 0.05, 0.70, 0.28];
+        ax.axes_bounds = [0.32, 0.06, 0.64, 0.23];
         plot(t_out/3600, a_h, 'b-');
-        title('Semi-major axis'); ylabel('a [km]'); xgrid();
+        title('Semi-major axis vs Time'); ylabel('a [km]'); xgrid();
 
-        newaxes();
-        gca().axes_bounds = [0.28, 0.35, 0.70, 0.28];
+        try; scf(fig); newaxes(fig); catch; newaxes(); end
+        gca().axes_bounds = [0.32, 0.36, 0.64, 0.23];
         plot(t_out/3600, e_h, 'r-');
-        title('Eccentricity'); ylabel('e'); xgrid();
+        title('Eccentricity vs Time'); ylabel('e'); xgrid();
 
-        newaxes();
-        gca().axes_bounds = [0.28, 0.65, 0.70, 0.28];
+        try; scf(fig); newaxes(fig); catch; newaxes(); end
+        gca().axes_bounds = [0.32, 0.66, 0.64, 0.23];
         plot(t_out/3600, i_h*180/%pi, 'g-');
-        title('Inclination'); xlabel('Time [hr]'); ylabel('i [deg]'); xgrid();
+        title('Inclination vs Time'); xlabel('Time [hr]'); ylabel('i [deg]'); xgrid();
     end
 
     update_status(msprintf('Propagation complete. Period=%.2f min, Alt range=%.0f-%.0f km', ..

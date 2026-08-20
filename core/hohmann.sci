@@ -47,8 +47,8 @@ function result = hohmann_transfer(r1, r2, mu)
     result.T_transfer     = 2 * %pi * sqrt(a_t^3 / mu);
     result.phase_angle    = alpha;
     result.phase_angle_deg = alpha * 180 / %pi;
-    result.C3_departure   = (abs(dv1))^2;
-    result.energy_transfer = -mu / (2 * a_t);
+    result.energy_transfer = -mu / (2 * a_t);  // Specific orbital energy [km^2/s^2]
+    result.dv1_sq         = (abs(dv1))^2;
 endfunction
 
 

@@ -36,11 +36,12 @@ function [E, info] = solve_kepler(M, e, tol)
         end
 
         for k = 1:max_iter
-            f  = E - e * sin(E) - M;
-            fp = 1 - e * cos(E);
+            f   = E - e * sin(E) - M;
+            fp  = 1 - e * cos(E);
+            fpp = e * sin(E);
             if abs(fp) < 1e-30 then break; end
-            dE = f / fp;
-            E  = E - dE;
+            dE  = f / fp * (1 + (f * fpp) / (2 * fp^2));
+            E   = E - dE;
             info.iterations = k;
             info.residual   = abs(dE);
             if abs(dE) < tol then
@@ -61,11 +62,12 @@ function [E, info] = solve_kepler(M, e, tol)
         if abs(H) > 30 then H = sign(M) * log(2 * abs(M) / e); end
 
         for k = 1:max_iter
-            f  = e * sinh(H) - H - M;
-            fp = e * cosh(H) - 1;
+            f   = e * sinh(H) - H - M;
+            fp  = e * cosh(H) - 1;
+            fpp = e * sinh(H);
             if abs(fp) < 1e-30 then break; end
-            dH = f / fp;
-            H  = H - dH;
+            dH  = f / fp * (1 + (f * fpp) / (2 * fp^2));
+            H   = H - dH;
             info.iterations = k;
             info.residual   = abs(dH);
             if abs(dH) < tol then

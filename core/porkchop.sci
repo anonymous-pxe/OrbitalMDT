@@ -27,17 +27,36 @@ function [dv_grid, c3_grid, tof_grid, dep_jd, arr_jd] = generate_porkchop( ..
     c3_grid  = %inf * ones(n_dep, n_arr);
     tof_grid = zeros(n_dep, n_arr);
 
+    // Precompute heliocentric planet states to optimize performance
+    dep_r = zeros(3, n_dep);
+    dep_v = zeros(3, n_dep);
+    for i = 1:n_dep
+        [r_tmp, v_tmp] = planet_state_heliocentric(dep_planet, dep_jd(i));
+        dep_r(:, i) = r_tmp;
+        dep_v(:, i) = v_tmp;
+    end
+
+    arr_r = zeros(3, n_arr);
+    arr_v = zeros(3, n_arr);
+    for j = 1:n_arr
+        [r_tmp, v_tmp] = planet_state_heliocentric(arr_planet, arr_jd(j));
+        arr_r(:, j) = r_tmp;
+        arr_v(:, j) = v_tmp;
+    end
+
     for i_dep = 1:n_dep
-        [r1, v1_planet] = planet_state_heliocentric(dep_planet, dep_jd(i_dep));
+        r1 = dep_r(:, i_dep);
+        v1_planet = dep_v(:, i_dep);
 
         for i_arr = 1:n_arr
             tof_days = arr_jd(i_arr) - dep_jd(i_dep);
-            if tof_days <= 10 then continue; end
+            if tof_days <= 10 | tof_days > 1200 then continue; end
 
             tof_grid(i_dep, i_arr) = tof_days;
             tof_sec = tof_days * const.day2sec;
 
-            [r2, v2_planet] = planet_state_heliocentric(arr_planet, arr_jd(i_arr));
+            r2 = arr_r(:, i_arr);
+            v2_planet = arr_v(:, i_arr);
 
             [dv1, dv2, dv_tot, vinf_d, vinf_a] = lambert_dv( ..
                 r1, r2, tof_sec, v1_planet, v2_planet, const.mu_Sun);
@@ -51,6 +70,29 @@ function [dv_grid, c3_grid, tof_grid, dep_jd, arr_jd] = generate_porkchop( ..
     dv_grid(dv_grid > 30) = %inf;
     c3_grid(c3_grid > 200) = %inf;
 endfunction
+
+
+function res = porkchop_compute(dep_planet, arr_planet, dep_start_jd, dep_end_jd, arr_start_jd, arr_end_jd, n_dep, n_arr)
+    // Structured Porkchop computation returning PorkchopResult struct.
+    [dv_grid, c3_grid, tof_grid, dep_jd, arr_jd] = generate_porkchop( ..
+        dep_planet, arr_planet, dep_start_jd, dep_end_jd, arr_start_jd, arr_end_jd, n_dep, n_arr);
+
+    [opt_dep, opt_arr, opt_dv, opt_tof] = find_optimal_window(dv_grid, dep_jd, arr_jd);
+
+    res.departure_dates = dep_jd;
+    res.arrival_dates   = arr_jd;
+    res.dv_grid         = dv_grid;
+    res.c3_grid         = c3_grid;
+    res.tof_grid        = tof_grid;
+    res.valid_grid      = (dv_grid < 30);
+    res.converged_grid  = (dv_grid <> %inf);
+    res.best_solution.departure_jd = opt_dep;
+    res.best_solution.arrival_jd   = opt_arr;
+    res.best_solution.opt_dv       = opt_dv;
+    res.best_solution.opt_tof      = opt_tof;
+    res.status          = 0;
+endfunction
+
 
 
 function [opt_dep_jd, opt_arr_jd, opt_dv, opt_tof] = find_optimal_window( ..
@@ -78,20 +120,51 @@ function plot_porkchop(dv_grid, dep_jd, arr_jd, dep_planet_name, arr_planet_name
     arr_days = arr_jd - arr_jd(1);
 
     dv_plot = dv_grid;
-    dv_plot(dv_plot == %inf) = %nan;
-
-    valid_dv = dv_plot(~isnan(dv_plot));
-    if length(valid_dv) > 0 then
+    valid_dv = dv_plot(dv_plot <> %inf & ~isnan(dv_plot));
+    if size(valid_dv, "*") > 0 then
         dv_min = min(valid_dv);
         dv_max_plot = min(max(valid_dv), 30);
-        levels = linspace(dv_min, dv_max_plot, 15);
+        if dv_max_plot <= dv_min then dv_max_plot = dv_min + 10; end
+        levels = linspace(dv_min, dv_max_plot, 16);
     else
-        levels = linspace(5, 30, 15);
+        dv_min = 5;
+        dv_max_plot = 30;
+        levels = linspace(5, 30, 16);
     end
 
-    clf();
-    // contourf expects: contourf(x, y, Z) where Z(i,j) = f(x(i), y(j))
-    // dep_days indexes rows, arr_days indexes columns  -> no transpose needed
+    // Replace out-of-bounds / infinite cells with dv_max_plot to eliminate black artifacts
+    dv_plot(dv_plot == %inf | isnan(dv_plot) | dv_plot > dv_max_plot) = dv_max_plot;
+
+    // Safe figure/axes initialization: do not clear the whole GUI if invoked within OrbitalMDT
+    is_gui = %F;
+    try
+        f_cur = gcf();
+        if is_valid_handle(f_cur) then
+            if f_cur.tag == 'main_fig' then
+                is_gui = %T;
+            end
+        end
+    catch
+    end
+
+    if is_gui then
+        clear_plot_axes();
+        newaxes();
+        gca().axes_bounds = [0.33, 0.10, 0.58, 0.82];
+    else
+        clf();
+    end
+    try
+        try
+            gcf().color_map = jet(64);
+        catch
+            gcf().color_map = jetcolormap(64);
+        end
+        gcf().background = -2;
+        gca().background = -2;
+    catch
+    end
+
     contourf(dep_days, arr_days, dv_plot, levels);
     colorbar(min(levels), max(levels));
 

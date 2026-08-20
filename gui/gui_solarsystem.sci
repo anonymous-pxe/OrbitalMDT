@@ -2,9 +2,12 @@
 
 function build_solarsystem_tab(fig)
 
-    y_base = 25;
+    win_w = 1200; win_h = 800;
+    try win_w = fig.axes_size(1); win_h = fig.axes_size(2); catch end
+
+    y_base = win_h - 780;
     x_panel = 15;
-    pw = 280;
+    pw = 290;
 
     uicontrol(fig, 'style', 'text', 'string', '[*] SOLAR SYSTEM VIEWER', ..
         'position', [x_panel, y_base+660, pw, 22], ..
@@ -64,13 +67,21 @@ function build_solarsystem_tab(fig)
             'fontname', 'Consolas', 'tag', 'content_ss_dist_' + string(k));
     end
 
-    uicontrol(fig, 'style', 'pushbutton', 'string', 'Show Sphere of Influence', ..
-        'position', [x_panel, y_base+150, pw, 28], 'fontsize', 10, ..
+    uicontrol(fig, 'style', 'pushbutton', 'string', 'Show Sphere of Influence (SOI)', ..
+        'position', [x_panel, y_base+145, pw, 28], 'fontsize', 10, ..
         'callback', 'cb_show_soi()', 'tag', 'content_ss_soi_btn');
 
+    // Model Assumptions Banner
+    uicontrol(fig, 'style', 'text', ..
+        'string', 'Assumptions: Standish (1992) Analytical Ephemerides, Heliocentric Ecliptic J2000', ..
+        'position', [x_panel, y_base+122, pw, 18], 'fontsize', 8, ..
+        'horizontalalignment', 'left', 'foreground', [0.5, 0.5, 0.5], ..
+        'tag', 'content_ss_assumptions');
+
+    plot_w = max(400, win_w - 330);
     uicontrol(fig, 'style', 'text', ..
         'string', 'Solar system view will appear here', ..
-        'position', [310, y_base+300, 870, 40], 'fontsize', 14, ..
+        'position', [310, floor(win_h / 2) - 20, plot_w, 40], 'fontsize', 14, ..
         'horizontalalignment', 'center', 'foreground', [0.5, 0.5, 0.6], ..
         'tag', 'content_ss_plot_placeholder');
 endfunction
@@ -80,11 +91,22 @@ function cb_render_solar_system()
 
     const = orbital_constants();
 
-    date_str = get(findobj('tag', 'content_ss_date'), 'string');
-    d = strtod(tokens(date_str));
-    JD = date_to_jd(d(1), d(2), d(3));
+    date_str = get_tag_str('content_ss_date', '2026 8 15');
+    [y, m, d, ok, msg] = parse_date_str(date_str);
+    if ~ok then
+        gui_report_error(msg);
+        return;
+    end
 
-    positions = solar_system_state(JD);
+    JD = date_to_jd(y, m, d);
+
+    try
+        positions = solar_system_state(JD);
+    catch
+        gui_report_error("Failed to compute planetary ephemeris: " + lasterror());
+        return;
+    end
+
     AU = const.AU;
 
     for k = 1:6
@@ -103,15 +125,17 @@ function cb_render_solar_system()
     end
 
     ph = findobj('tag', 'content_ss_plot_placeholder');
-    if ph <> [] then set(ph, 'visible', 'off'); end
+    if ph <> [] then
+        for p_idx = 1:size(ph, "*")
+            try delete(ph(p_idx)); catch try set(ph(p_idx), 'visible', 'off'); catch end end
+        end
+    end
 
     view_type = get(findobj('tag', 'content_ss_view'), 'value');
     show_orbits = get(findobj('tag', 'content_ss_orbits'), 'value');
     show_labels_val = get(findobj('tag', 'content_ss_labels'), 'value');
 
-    newaxes();
-    a = gca();
-    a.axes_bounds = [0.28, 0.05, 0.70, 0.90];
+    a = gui_create_plot_axes([0.32, 0.10, 0.64, 0.82]);
     a.isoview = 'on';
 
     p_colors = [0.7,0.7,0.7; 0.9,0.8,0.4; 0.2,0.5,1.0; ..
@@ -139,21 +163,24 @@ function cb_render_solar_system()
         end
     end
 
-    // planets
+    // planets with staggered label placement
+    label_angle_offsets = [0.2, 0.8, 1.4, 2.0, 0.5, 1.1] * %pi;
     for k = planets
         x_p = positions(1, k) / AU;
         y_p = positions(2, k) / AU;
         plot(x_p, y_p, 'o', 'MarkerSize', p_sizes(k), ..
             'MarkerFaceColor', p_colors(k,:), 'MarkerEdgeColor', p_colors(k,:));
         if show_labels_val == 1 then
-            xstring(x_p + 0.05*max_r, y_p + 0.05*max_r, const.planet_names(k));
+            dx = 0.04 * max_r * cos(label_angle_offsets(k));
+            dy = 0.04 * max_r * sin(label_angle_offsets(k));
+            xstring(x_p + dx, y_p + dy, const.planet_names(k));
         end
     end
 
     gca().data_bounds = [-max_r, -max_r; max_r, max_r];
 
     [y_d, m_d, d_d] = jd_to_date(JD);
-    title(msprintf('Solar System -- %d-%02d-%02d', y_d, floor(m_d), floor(d_d)));
+    title(msprintf('Solar System Configuration -- %d-%02d-%02d', y_d, floor(m_d), floor(d_d)));
     xlabel('X [AU]');
     ylabel('Y [AU]');
 
@@ -166,11 +193,11 @@ function cb_show_soi()
     orbit_radii = [const.a_Mercury, const.a_Venus, const.a_Earth, ..
                    const.a_Mars, const.a_Jupiter, const.a_Saturn];
 
-    msg = "Sphere of Influence Radii:" + ascii(10) + ascii(10);
+    msg = "Sphere of Influence (Laplace SOI) Radii:" + ascii(10) + ascii(10);
     for k = 1:6
         soi = sphere_of_influence(orbit_radii(k), const.mu_planets(k), const.mu_Sun);
         msg = msg + msprintf("%s:  %.0f km  (%.4f AU)" + ascii(10), ..
             const.planet_names(k), soi.r_soi, soi.r_soi_AU);
     end
-    messagebox(msg, 'Sphere of Influence', 'info');
+    messagebox(msg, 'Sphere of Influence Radii', 'info');
 endfunction

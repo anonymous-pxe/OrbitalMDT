@@ -1,10 +1,13 @@
-// OrbitalMDT :: Lambert Solver Tab
+// OrbitalMDT: Lambert Solver Tab
 
 function build_lambert_tab(fig)
 
-    y_base = 25;
+    win_w = 1200; win_h = 800;
+    try win_w = fig.axes_size(1); win_h = fig.axes_size(2); catch end
+
+    y_base = win_h - 780;
     x_panel = 15;
-    pw = 280;
+    pw = 290;
 
     uicontrol(fig, 'style', 'text', 'string', '[*] LAMBERT PROBLEM SOLVER', ..
         'position', [x_panel, y_base+660, pw, 22], ..
@@ -91,16 +94,22 @@ function build_lambert_tab(fig)
         'position', [x_panel+130, y_base+421, 145, 25], 'fontsize', 10, ..
         'tag', 'content_lb_direction');
 
+    // load mission state button
+    uicontrol(fig, 'style', 'pushbutton', 'string', 'Load from Mission State', ..
+        'position', [x_panel, y_base+388, pw, 26], ..
+        'fontsize', 10, 'callback', 'cb_load_mission_state_lambert()', ..
+        'tag', 'content_lb_load_state');
+
     // solve button
     uicontrol(fig, 'style', 'pushbutton', 'string', 'SOLVE LAMBERT PROBLEM', ..
-        'position', [x_panel, y_base+375, pw, 35], ..
-        'fontsize', 12, 'fontweight', 'bold', ..
+        'position', [x_panel, y_base+354, pw, 28], ..
+        'fontsize', 11, 'fontweight', 'bold', ..
         'background', [0.8, 0.4, 0.1], 'foreground', [1, 1, 1], ..
         'callback', 'cb_solve_lambert()', 'tag', 'content_lb_solve');
 
     // results
     uicontrol(fig, 'style', 'text', 'string', '[*] SOLUTION', ..
-        'position', [x_panel, y_base+345, pw, 22], ..
+        'position', [x_panel, y_base+322, pw, 22], ..
         'fontsize', 11, 'fontweight', 'bold', 'horizontalalignment', 'left', ..
         'foreground', [0.8, 0.3, 0.0], 'tag', 'content_lb_res_title');
 
@@ -116,35 +125,86 @@ function build_lambert_tab(fig)
 
     for k = 1:9
         uicontrol(fig, 'style', 'text', 'string', rl(k,:), ..
-            'position', [x_panel, y_base+345-k*23, pw, 20], ..
+            'position', [x_panel, y_base+322-k*19, pw, 18], ..
             'fontsize', 9, 'horizontalalignment', 'left', ..
             'fontname', 'Consolas', 'tag', 'content_lb_result_' + string(k));
     end
 
+    // Model Assumptions Banner
+    uicontrol(fig, 'style', 'text', ..
+        'string', 'Assumptions: Universal Variables, Single-Rev, 2-Body Impulsive', ..
+        'position', [x_panel, y_base+130, pw, 18], 'fontsize', 8, ..
+        'horizontalalignment', 'left', 'foreground', [0.5, 0.5, 0.5], ..
+        'tag', 'content_lb_assumptions');
+
+    plot_w = max(400, win_w - 330);
     uicontrol(fig, 'style', 'text', ..
         'string', 'Transfer orbit will be plotted here', ..
-        'position', [310, y_base+300, 870, 40], 'fontsize', 14, ..
+        'position', [310, floor(win_h / 2) - 20, plot_w, 40], 'fontsize', 14, ..
         'horizontalalignment', 'center', 'foreground', [0.5, 0.5, 0.6], ..
         'tag', 'content_lb_plot_placeholder');
 endfunction
 
 
-function cb_solve_lambert()
+function cb_load_mission_state_lambert()
+    st = get_app_state();
+    if isempty(st.r1_vec) | norm(st.r1_vec) == 0 then
+        gui_report_error('No active mission state found. Generate a transfer in Mission Planner first.');
+        return;
+    end
 
+    set(findobj('tag', 'content_lb_r1x'), 'string', string(st.r1_vec(1)));
+    set(findobj('tag', 'content_lb_r1y'), 'string', string(st.r1_vec(2)));
+    set(findobj('tag', 'content_lb_r1z'), 'string', string(st.r1_vec(3)));
+
+    set(findobj('tag', 'content_lb_r2x'), 'string', string(st.r2_vec(1)));
+    set(findobj('tag', 'content_lb_r2y'), 'string', string(st.r2_vec(2)));
+    set(findobj('tag', 'content_lb_r2z'), 'string', string(st.r2_vec(3)));
+
+    set(findobj('tag', 'content_lb_tof'), 'string', string(st.tof_days));
+    set(findobj('tag', 'content_lb_tof_unit'), 'value', 4); // days
+    set(findobj('tag', 'content_lb_body'), 'value', 2); // Sun
+
+    update_status('Loaded position vectors & TOF from central mission state!');
+endfunction
+
+
+function cb_solve_lambert()
     const = orbital_constants();
 
-    r1x = strtod(get(findobj('tag', 'content_lb_r1x'), 'string'));
-    r1y = strtod(get(findobj('tag', 'content_lb_r1y'), 'string'));
-    r1z = strtod(get(findobj('tag', 'content_lb_r1z'), 'string'));
+    [r1x, ok1x, m1x] = gui_get_num('content_lb_r1x', 'Position 1 X');
+    if ~ok1x then gui_report_error(m1x); return; end
 
-    r2x = strtod(get(findobj('tag', 'content_lb_r2x'), 'string'));
-    r2y = strtod(get(findobj('tag', 'content_lb_r2y'), 'string'));
-    r2z = strtod(get(findobj('tag', 'content_lb_r2z'), 'string'));
+    [r1y, ok1y, m1y] = gui_get_num('content_lb_r1y', 'Position 1 Y');
+    if ~ok1y then gui_report_error(m1y); return; end
+
+    [r1z, ok1z, m1z] = gui_get_num('content_lb_r1z', 'Position 1 Z');
+    if ~ok1z then gui_report_error(m1z); return; end
+
+    [r2x, ok2x, m2x] = gui_get_num('content_lb_r2x', 'Position 2 X');
+    if ~ok2x then gui_report_error(m2x); return; end
+
+    [r2y, ok2y, m2y] = gui_get_num('content_lb_r2y', 'Position 2 Y');
+    if ~ok2y then gui_report_error(m2y); return; end
+
+    [r2z, ok2z, m2z] = gui_get_num('content_lb_r2z', 'Position 2 Z');
+    if ~ok2z then gui_report_error(m2z); return; end
 
     r1_vec = [r1x; r1y; r1z];
     r2_vec = [r2x; r2y; r2z];
 
-    tof_val = strtod(get(findobj('tag', 'content_lb_tof'), 'string'));
+    if norm(r1_vec) < 1.0 then
+        gui_report_error("Position vector 1 magnitude is too close to zero (singular).");
+        return;
+    end
+    if norm(r2_vec) < 1.0 then
+        gui_report_error("Position vector 2 magnitude is too close to zero (singular).");
+        return;
+    end
+
+    [tof_val, okt, mt] = gui_get_positive_num('content_lb_tof', 'Time of Flight');
+    if ~okt then gui_report_error(mt); return; end
+
     tof_unit = get(findobj('tag', 'content_lb_tof_unit'), 'value');
     select tof_unit
     case 1, dt = tof_val;
@@ -165,7 +225,12 @@ function cb_solve_lambert()
     dir_val = get(findobj('tag', 'content_lb_direction'), 'value');
     if dir_val == 1 then direction = 1; else direction = -1; end
 
-    [v1, v2, converged] = lambert_solver(r1_vec, r2_vec, dt, mu, direction);
+    try
+        [v1, v2, converged, iter] = lambert_solver(r1_vec, r2_vec, dt, mu, direction);
+    catch
+        gui_report_error("Lambert solver computational error: " + lasterror());
+        return;
+    end
 
     if converged then
         [a, e, i_rad, RAAN, omega, nu] = state_to_orbital_elements(r1_vec, v1, mu);
@@ -190,7 +255,7 @@ function cb_solve_lambert()
         set(findobj('tag', 'content_lb_result_8'), 'string', ..
             msprintf('Transfer angle:  %.2f deg', dnu));
         set(findobj('tag', 'content_lb_result_9'), 'string', ..
-            '[OK] Status: CONVERGED');
+            msprintf('[OK] CONVERGED (%d iters)', iter));
 
         ph = findobj('tag', 'content_lb_plot_placeholder');
         if ph <> [] then set(ph, 'visible', 'off'); end
@@ -198,18 +263,23 @@ function cb_solve_lambert()
 
         update_status(msprintf('Lambert solved! |v1|=%.4f km/s, SMA=%.1f km', norm(v1), a));
     else
+        set(findobj('tag', 'content_lb_result_1'), 'string', 'v1 = [--, --, --] km/s');
+        set(findobj('tag', 'content_lb_result_2'), 'string', '|v1| = -- km/s');
+        set(findobj('tag', 'content_lb_result_3'), 'string', 'v2 = [--, --, --] km/s');
+        set(findobj('tag', 'content_lb_result_4'), 'string', '|v2| = -- km/s');
+        set(findobj('tag', 'content_lb_result_5'), 'string', 'Semi-major axis: --');
+        set(findobj('tag', 'content_lb_result_6'), 'string', 'Eccentricity: --');
+        set(findobj('tag', 'content_lb_result_7'), 'string', 'Inclination: --');
+        set(findobj('tag', 'content_lb_result_8'), 'string', 'Transfer angle: --');
         set(findobj('tag', 'content_lb_result_9'), 'string', ..
             '[NO] Status: DID NOT CONVERGE');
-        update_status('Lambert solver did not converge. Try different parameters.');
+        update_status('Lambert solver did not converge for specified geometry/TOF.');
     end
 endfunction
 
 
 function plot_lambert_transfer(r1, r2, v1, v2, mu, dt)
-
-    newaxes();
-    a = gca();
-    a.axes_bounds = [0.28, 0.05, 0.70, 0.90];
+    a = gui_create_plot_axes([0.32, 0.10, 0.64, 0.82]);
 
     try
         [t_tmp, states] = propagate_orbit(r1, v1, [0, dt], mu);
@@ -234,7 +304,7 @@ function plot_lambert_transfer(r1, r2, v1, v2, mu, dt)
         param3d([r1(1), r2(1)], [r1(2), r2(2)], [r1(3), r2(3)]);
     end
 
-    title('Lambert Transfer Orbit (3D)');
+    title('Lambert Transfer Orbit (3D ECI)');
     xlabel('X [km]');
     ylabel('Y [km]');
     zlabel('Z [km]');

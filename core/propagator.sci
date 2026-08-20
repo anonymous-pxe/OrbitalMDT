@@ -62,60 +62,69 @@ function [t_out, states] = propagate_orbit(r0, v0, t_span, mu, options)
 
     y0 = [r0(:); v0(:)];
 
-    if length(t_span) == 2 then
+    if size(t_span, "*") == 2 then
         t_out = linspace(t_span(1), t_span(2), n_steps);
     else
         t_out = t_span;
     end
 
-    // Build right-hand-side as a proper Scilab function (avoids closure issues)
+    rtol_c = 1e-9;
+    atol_c = 1e-9;
     if use_j2 then
-        mu_c = mu; J2_c = J2_val; Re_c = Re_val;
-        deff('dy = _rhs(t,y)', 'dy = two_body_j2_eom(t, y, mu_c, J2_c, Re_c)');
-        states = ode(y0, t_out(1), t_out, _rhs);
+        states = ode("adams", y0, t_out(1), t_out, rtol_c, atol_c, list(two_body_j2_eom, mu, J2_val, Re_val));
     else
-        mu_c = mu;
-        deff('dy = _rhs(t,y)', 'dy = two_body_eom(t, y, mu_c)');
-        states = ode(y0, t_out(1), t_out, _rhs);
+        states = ode("adams", y0, t_out(1), t_out, rtol_c, atol_c, list(two_body_eom, mu));
     end
 endfunction
 
 
 function [r_mag, v_mag, a_km, e_val, i_val, h_mag] = orbit_analysis(states, mu)
-    // Orbital parameters along a propagated trajectory.
+    // Vectorized orbital parameter analysis along a trajectory matrix.
+    r_mag = sqrt(sum(states(1:3, :).^2, "r"));
+    v_mag = sqrt(sum(states(4:6, :).^2, "r"));
+    
+    energy = (v_mag.^2) / 2 - mu ./ r_mag;
+    a_km = -mu ./ (2 * energy);
+    a_km(abs(energy) <= 1e-10) = %inf;
 
-    N = size(states, 2);
-    r_mag = zeros(1, N);
-    v_mag = zeros(1, N);
-    a_km  = zeros(1, N);
-    e_val = zeros(1, N);
-    i_val = zeros(1, N);
-    h_mag = zeros(1, N);
+    // Cross product h = r x v (vectorized)
+    hx = states(2, :) .* states(6, :) - states(3, :) .* states(5, :);
+    hy = states(3, :) .* states(4, :) - states(1, :) .* states(6, :);
+    hz = states(1, :) .* states(5, :) - states(2, :) .* states(4, :);
+    h_mag = sqrt(hx.^2 + hy.^2 + hz.^2);
 
-    for k = 1:N
-        rv = states(1:3, k);
-        vv = states(4:6, k);
-        r = norm(rv);
-        v = norm(vv);
+    // Eccentricity vector e = (1/mu) * ((v^2 - mu/r)*r - (r.v)*v)
+    rdotv = sum(states(1:3, :) .* states(4:6, :), "r");
+    c_rv  = v_mag.^2 - mu ./ r_mag;
+    ex = (1/mu) * (c_rv .* states(1, :) - rdotv .* states(4, :));
+    ey = (1/mu) * (c_rv .* states(2, :) - rdotv .* states(5, :));
+    ez = (1/mu) * (c_rv .* states(3, :) - rdotv .* states(6, :));
+    e_val = sqrt(ex.^2 + ey.^2 + ez.^2);
 
-        r_mag(k) = r;
-        v_mag(k) = v;
+    i_val = zeros(1, size(states, 2));
+    mask = h_mag > 1e-10;
+    i_val(mask) = acos(max(-1, min(1, hz(mask) ./ h_mag(mask))));
+endfunction
 
-        hv = cross(rv, vv);
-        h_mag(k) = norm(hv);
 
-        energy = v^2/2 - mu/r;
-        if abs(energy) > 1e-10 then
-            a_km(k) = -mu / (2 * energy);
-        else
-            a_km(k) = %inf;
-        end
+function metrics = check_conservation(states, mu)
+    // Quantify energy and angular momentum conservation along a trajectory.
+    // INPUTS:
+    //   states - 6xN matrix of states [r; v]
+    //   mu     - gravitational parameter
+    // OUTPUTS:
+    //   metrics - struct with energy_rel_err, h_rel_err, max_r, min_r
 
-        ev = (1/mu) * ((v^2 - mu/r) * rv - dot(rv, vv) * vv);
-        e_val(k) = norm(ev);
+    [r_mag, v_mag, a_km, e_val, i_val, h_mag] = orbit_analysis(states, mu);
 
-        if h_mag(k) > 1e-10 then
-            i_val(k) = acos(max(-1, min(1, hv(3) / h_mag(k))));
-        end
-    end
+    E0 = v_mag(1)^2 / 2 - mu / r_mag(1);
+    E_end = v_mag($)^2 / 2 - mu / r_mag($);
+    metrics.energy_rel_err = abs((E_end - E0) / E0);
+
+    h0 = h_mag(1);
+    h_end = h_mag($);
+    metrics.h_rel_err = abs((h_end - h0) / h0);
+
+    metrics.max_r = max(r_mag);
+    metrics.min_r = min(r_mag);
 endfunction
